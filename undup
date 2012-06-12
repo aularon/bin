@@ -1,0 +1,79 @@
+#!/usr/bin/env python2
+import sys, os, subprocess
+
+class undup:
+    files = []
+    filesByChecksum = {}
+    filesBySize = {}
+    def initFromCmdOutput(self, args):
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE)
+        self.genSizes(proc.stdout)
+        
+    def genSizes(self, fd):
+        counter = 0
+        tmpFilesBySize = {}
+        while True:
+            fname = fd.readline().rstrip()
+            if fname == '':
+                break
+            counter+=1
+            size = os.path.getsize(fname)
+            if not size in tmpFilesBySize:
+                tmpFilesBySize[size] = []
+            else:
+                self.filesBySize[size] = tmpFilesBySize[size]
+            tmpFilesBySize[size].append(fname)
+            #print "test: -", fname, '-', size
+        print >> sys.stderr, '# Checked %d files, %d unique sizes. %d with more than one file'%(counter, len(tmpFilesBySize), len(self.filesBySize))
+        #print self.filesBySize
+        
+    def go(self):
+        counter = 0
+        counter2 = 0
+        for size in self.filesBySize:
+            counter2+=1
+            tmpFilesByChecksum = {}
+            for fname in self.filesBySize[size]:
+                counter+=1
+                h = subprocess.check_output(['sha1sum', fname])[0:40]
+                if not h in tmpFilesByChecksum:
+                    tmpFilesByChecksum[h] = []
+                else:
+                    self.filesByChecksum[h] = tmpFilesByChecksum[h]
+                tmpFilesByChecksum[h].append(fname)
+                #print h, fname
+        print >> sys.stderr, '# Checked %d files, %d unique hashes. %d with more than one file'%(counter, counter2, len(self.filesByChecksum))
+        self.xgo()
+    
+    def loadSHA1Sums(self):
+        fd = open( "sha1sums.txt" )
+        for line in fd:
+            h = line[0:40]
+            f = line[42:-1]
+            if not h in self.filesByChecksum:
+                self.filesByChecksum[h] = []
+            self.filesByChecksum[h].append(f)
+        
+    def xgo(self):
+        for h in self.filesByChecksum:
+            files = self.filesByChecksum[h]
+            if len(files)>1:
+                print >> sys.stderr, '#', h
+                lastFile = files.pop();
+                print 'rm', '"'+ '" "'.join(files)+ '"';
+                for f in files:#()
+                    relpath = os.path.relpath('/'+lastFile, os.path.dirname('/'+f))
+                    print 'ln -s "'+relpath+'"', '"' + f + '"'
+    
+
+
+find_args = sys.argv[:]
+find_args[0] = 'find'
+print >> sys.stderr, '#', find_args
+ud = undup();
+ud.initFromCmdOutput(find_args)
+ud.go()
+#ud.loadSHA1Sums();
+#ud.go(sys.argv);
+
+
